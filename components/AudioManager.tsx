@@ -228,7 +228,7 @@ export default function AudioManager() {
                               className="p-2 rounded-lg bg-destructive hover:bg-destructive/90 transition-colors"
                               title="Delete"
                             >
-                              <Trash2 className="w-5 h-5 text-destructive-foreground" />
+                              <Trash2 className="w-5 h-5 text-white" />
                             </button>
                           </>
                         ) : (
@@ -253,7 +253,7 @@ export default function AudioManager() {
                     </div>
 
                     {audio ? (
-                      <div className="bg-muted rounded-lg p-3 flex items-center gap-3">
+                      <div className="bg-card border border-border rounded-lg p-3 flex items-center gap-3">
                         <Volume2 className="w-5 h-5 text-primary" />
                         <div className="flex-1">
                           <p className="text-foreground text-sm font-medium">{audio.filename}</p>

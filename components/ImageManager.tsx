@@ -10,6 +10,7 @@ interface S3Image {
   lastModified: string
   key: string
   category: string
+  subcategory?: string  // japanese/korean/chinese or black-bars/white-bars/mosaic
   type: 'before' | 'after'
 }
 
@@ -24,18 +25,52 @@ interface ImageManagerProps {
   categoryName: string
 }
 
+// Define subcategories for each category
+const SUBCATEGORIES: Record<string, string[]> = {
+  'comic-translation': ['japanese', 'korean', 'chinese'],
+  'art-restoration': ['black-bars', 'white-bars', 'mosaic'],
+  'mobile-layout': ['japanese', 'korean', 'chinese'],
+}
+
 export default function ImageManager({ category, categoryName }: ImageManagerProps) {
+  const isVideo = category === 'video-subtitles'
   const [images, setImages] = useState<S3Image[]>([])
   const [imagePairs, setImagePairs] = useState<ImagePair[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [dragActive, setDragActive] = useState<'before' | 'after' | null>(null)
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null)
+  const [cacheKey, setCacheKey] = useState<number>(Date.now()) // For cache-busting
+  const [viewerImage, setViewerImage] = useState<string | null>(null) // For image viewer
   const beforeInputRef = useRef<HTMLInputElement>(null)
   const afterInputRef = useRef<HTMLInputElement>(null)
 
+  // Get subcategories for current category
+  const subcategories = SUBCATEGORIES[category] || null
+
+  // Set initial subcategory when category changes
+  useEffect(() => {
+    if (subcategories && subcategories.length > 0) {
+      setSelectedSubcategory(subcategories[0])
+    } else {
+      setSelectedSubcategory(null)
+    }
+  }, [category])
+
   useEffect(() => {
     fetchImages()
-  }, [category])
+  }, [category, selectedSubcategory])
+
+  // Handle Escape key to close viewer
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && viewerImage) {
+        setViewerImage(null)
+      }
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [viewerImage])
 
   useEffect(() => {
     // Group images into pairs by matching numbers
@@ -87,9 +122,16 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
       const response = await fetch(`${apiUrl}/admin/examples/list`)
       const data = await response.json()
       
-      // Filter images for current category
-      const categoryImages = data.images.filter((img: S3Image) => img.category === category)
+      // Filter images for current category and subcategory
+      let categoryImages = data.images.filter((img: S3Image) => img.category === category)
+      
+      // Further filter by subcategory if one is selected
+      if (selectedSubcategory) {
+        categoryImages = categoryImages.filter((img: S3Image) => img.subcategory === selectedSubcategory)
+      }
+      
       setImages(categoryImages)
+      setCacheKey(Date.now()) // Update cache key to bust browser cache
     } catch (error) {
       console.error('Failed to fetch images:', error)
     } finally {
@@ -105,6 +147,11 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
       formData.append('file', file)
       formData.append('category', category)
       formData.append('image_type', imageType)
+      
+      // Add subcategory if one is selected
+      if (selectedSubcategory) {
+        formData.append('subcategory', selectedSubcategory)
+      }
 
       const response = await fetch(`${apiUrl}/admin/examples/upload`, {
         method: 'POST',
@@ -113,7 +160,7 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
 
       if (response.ok) {
         await fetchImages()
-        alert('Image uploaded successfully!')
+        alert(`${isVideo ? 'Video' : 'Image'} uploaded successfully!`)
       } else {
         const error = await response.json()
         alert(`Upload failed: ${error.detail}`)
@@ -131,8 +178,18 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      
+      // Build the delete path based on whether subcategory exists
+      // Path format: category/subcategory/type/filename or category/type/filename
+      let deletePath: string
+      if (img.subcategory) {
+        deletePath = `${img.category}/${img.subcategory}/${img.type}/${img.filename}`
+      } else {
+        deletePath = `${img.category}/${img.type}/${img.filename}`
+      }
+      
       const response = await fetch(
-        `${apiUrl}/admin/examples/delete/${img.category}/${img.type}/${img.filename}`,
+        `${apiUrl}/admin/examples/delete/${deletePath}`,
         { method: 'DELETE' }
       )
 
@@ -185,13 +242,63 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
 
   return (
     <div className="space-y-6">
+      {/* Image Viewer Modal */}
+      {viewerImage && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          onClick={() => setViewerImage(null)}
+        >
+          <button
+            onClick={() => setViewerImage(null)}
+            className="absolute top-4 right-4 p-2 rounded-full bg-background/90 hover:bg-background text-foreground transition-colors"
+            title="Close (Esc)"
+          >
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <div 
+            className="max-w-7xl max-h-[90vh] relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img 
+              src={viewerImage} 
+              alt="Full size preview" 
+              className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Subcategory Tabs (if applicable) */}
+      {subcategories && subcategories.length > 0 && (
+        <div className="bg-card rounded-lg shadow-sm border border-border p-4">
+          <h3 className="text-sm font-semibold text-foreground mb-3">Subcategory</h3>
+          <div className="flex flex-wrap gap-2">
+            {subcategories.map((subcat) => (
+              <button
+                key={subcat}
+                onClick={() => setSelectedSubcategory(subcat)}
+                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  selectedSubcategory === subcat
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-background border border-border text-foreground hover:border-primary/50'
+                }`}
+              >
+                {subcat.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Upload Section */}
       <div className="bg-card rounded-lg shadow-sm border border-border p-6">
-        <h2 className="text-xl font-semibold text-foreground mb-4">Upload New Image Pair</h2>
+        <h2 className="text-xl font-semibold text-foreground mb-4">Upload New {isVideo ? 'Video' : 'Image'} Pair</h2>
         <div className="grid md:grid-cols-2 gap-4">
           {/* Before Upload */}
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">Before Image</label>
+            <label className="block text-sm font-medium text-foreground mb-2">Before {isVideo ? 'Video' : 'Image'}</label>
             <div
               className={`border-2 border-dashed rounded-lg p-8 text-center transition-all cursor-pointer ${
                 dragActive === 'before' 
@@ -208,13 +315,13 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
                 <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               <p className="text-sm font-medium text-foreground">Click to upload or drag & drop</p>
-              <p className="text-xs text-muted-foreground mt-1">PNG, JPG up to 10MB</p>
+              <p className="text-xs text-muted-foreground mt-1">{isVideo ? 'MP4, WebM up to 50MB' : 'PNG, JPG up to 10MB'}</p>
             </div>
             <input
               ref={beforeInputRef}
               type="file"
               className="hidden"
-              accept="image/*"
+              accept={isVideo ? 'video/*' : 'image/*'}
               onChange={(e) => handleFileInput(e, 'before')}
               disabled={uploading}
             />
@@ -222,7 +329,7 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
 
           {/* After Upload */}
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">After Image</label>
+            <label className="block text-sm font-medium text-foreground mb-2">After {isVideo ? 'Video' : 'Image'}</label>
             <div
               className={`border-2 border-dashed rounded-lg p-8 text-center transition-all cursor-pointer ${
                 dragActive === 'after' 
@@ -239,13 +346,13 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
                 <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               <p className="text-sm font-medium text-foreground">Click to upload or drag & drop</p>
-              <p className="text-xs text-muted-foreground mt-1">PNG, JPG up to 10MB</p>
+              <p className="text-xs text-muted-foreground mt-1">{isVideo ? 'MP4, WebM up to 50MB' : 'PNG, JPG up to 10MB'}</p>
             </div>
             <input
               ref={afterInputRef}
               type="file"
               className="hidden"
-              accept="image/*"
+              accept={isVideo ? 'video/*' : 'image/*'}
               onChange={(e) => handleFileInput(e, 'after')}
               disabled={uploading}
             />
@@ -267,7 +374,7 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
       <div className="bg-card rounded-lg shadow-sm border border-border p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-foreground">
-            Image Pairs ({imagePairs.length})
+            {isVideo ? 'Video' : 'Image'} Pairs ({imagePairs.length})
           </h2>
           <span className="text-sm text-muted-foreground">
             Showing pairs for <span className="font-medium text-foreground">{categoryName}</span>
@@ -311,14 +418,35 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
                     </div>
                     {pair.before ? (
                       <div className="relative group">
-                        <div className="aspect-video rounded-lg overflow-hidden bg-muted border border-border">
-                          <Image
-                            src={pair.before.url}
-                            alt={pair.before.filename}
-                            width={400}
-                            height={300}
-                            className="object-cover w-full h-full"
-                          />
+                        <div 
+                          className="aspect-video rounded-lg overflow-hidden bg-muted border border-border cursor-pointer hover:border-primary transition-colors"
+                          onClick={() => !isVideo && setViewerImage(`${pair.before!.url}?v=${cacheKey}`)}
+                        >
+                          {isVideo ? (
+                            <video
+                              src={`${pair.before.url}?v=${cacheKey}`}
+                              className="object-cover w-full h-full"
+                              controls
+                              loop
+                              muted
+                            />
+                          ) : (
+                            <>
+                              <Image
+                                src={`${pair.before.url}?v=${cacheKey}`}
+                                alt={pair.before.filename}
+                                width={400}
+                                height={300}
+                                className="object-cover w-full h-full"
+                                unoptimized
+                              />
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                <svg className="h-8 w-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                                </svg>
+                              </div>
+                            </>
+                          )}
                         </div>
                         <div className="mt-2 flex items-center justify-between">
                           <div className="flex-1 min-w-0">
@@ -357,14 +485,35 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
                     </div>
                     {pair.after ? (
                       <div className="relative group">
-                        <div className="aspect-video rounded-lg overflow-hidden bg-muted border border-border">
-                          <Image
-                            src={pair.after.url}
-                            alt={pair.after.filename}
-                            width={400}
-                            height={300}
-                            className="object-cover w-full h-full"
-                          />
+                        <div 
+                          className="aspect-video rounded-lg overflow-hidden bg-muted border border-border cursor-pointer hover:border-primary transition-colors"
+                          onClick={() => !isVideo && setViewerImage(`${pair.after!.url}?v=${cacheKey}`)}
+                        >
+                          {isVideo ? (
+                            <video
+                              src={`${pair.after.url}?v=${cacheKey}`}
+                              className="object-cover w-full h-full"
+                              controls
+                              loop
+                              muted
+                            />
+                          ) : (
+                            <>
+                              <Image
+                                src={`${pair.after.url}?v=${cacheKey}`}
+                                alt={pair.after.filename}
+                                width={400}
+                                height={300}
+                                className="object-cover w-full h-full"
+                                unoptimized
+                              />
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                <svg className="h-8 w-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                                </svg>
+                              </div>
+                            </>
+                          )}
                         </div>
                         <div className="mt-2 flex items-center justify-between">
                           <div className="flex-1 min-w-0">
@@ -404,8 +553,8 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
             <svg className="mx-auto h-12 w-12 text-muted-foreground mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
-            <p className="text-muted-foreground mb-2">No image pairs yet</p>
-            <p className="text-sm text-muted-foreground">Upload your first before/after images above to get started</p>
+            <p className="text-muted-foreground mb-2">No {isVideo ? 'video' : 'image'} pairs yet</p>
+            <p className="text-sm text-muted-foreground">Upload your first before/after {isVideo ? 'videos' : 'images'} above to get started</p>
           </div>
         )}
       </div>
