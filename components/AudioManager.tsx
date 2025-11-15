@@ -32,6 +32,21 @@ const AUDIO_CATEGORIES: AudioCategory[] = [
   { speaker: "multi-speaker", language: "hindi", label: "Multi Speaker - Hindi" },
 ];
 
+// Helper to get auth headers
+function getAuthHeaders(): Record<string, string> {
+  const savedCreds = sessionStorage.getItem('admin_auth')
+  if (!savedCreds) return {}
+  
+  try {
+    const { username, password } = JSON.parse(savedCreds)
+    return {
+      'Authorization': 'Basic ' + btoa(`${username}:${password}`)
+    }
+  } catch (e) {
+    return {}
+  }
+}
+
 export default function AudioManager() {
   const [audios, setAudios] = useState<AudioFile[]>([]);
   const [loading, setLoading] = useState(false);
@@ -48,7 +63,9 @@ export default function AudioManager() {
   const fetchAudios = async () => {
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:8000/admin/examples/audio/list");
+      const res = await fetch("http://localhost:8000/admin/examples/audio/list", {
+        headers: getAuthHeaders()
+      });
       const data: AudioListResponse = await res.json();
       setAudios(data.audios);
     } catch (error) {
@@ -81,6 +98,7 @@ export default function AudioManager() {
       const res = await fetch("http://localhost:8000/admin/examples/audio/upload", {
         method: "POST",
         body: formData,
+        headers: getAuthHeaders()
       });
 
       if (res.ok) {
@@ -104,7 +122,10 @@ export default function AudioManager() {
     try {
       const res = await fetch(
         `http://localhost:8000/admin/examples/audio/delete/${audio.speaker_mode}/${audio.language}/${audio.filename}`,
-        { method: "DELETE" }
+        {
+          method: "DELETE",
+          headers: getAuthHeaders()
+        }
       );
 
       if (res.ok) {

@@ -32,6 +32,21 @@ const SUBCATEGORIES: Record<string, string[]> = {
   'mobile-layout': ['japanese', 'korean', 'chinese'],
 }
 
+// Helper to get auth headers
+function getAuthHeaders(): Record<string, string> {
+  const savedCreds = sessionStorage.getItem('admin_auth')
+  if (!savedCreds) return {}
+  
+  try {
+    const { username, password } = JSON.parse(savedCreds)
+    return {
+      'Authorization': 'Basic ' + btoa(`${username}:${password}`)
+    }
+  } catch (e) {
+    return {}
+  }
+}
+
 export default function ImageManager({ category, categoryName }: ImageManagerProps) {
   const isVideo = category === 'video-subtitles'
   const [images, setImages] = useState<S3Image[]>([])
@@ -119,7 +134,9 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
     setLoading(true)
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const response = await fetch(`${apiUrl}/admin/examples/list`)
+      const response = await fetch(`${apiUrl}/admin/examples/list`, {
+        headers: getAuthHeaders()
+      })
       const data = await response.json()
       
       // Filter images for current category and subcategory
@@ -156,6 +173,7 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
       const response = await fetch(`${apiUrl}/admin/examples/upload`, {
         method: 'POST',
         body: formData,
+        headers: getAuthHeaders()
       })
 
       if (response.ok) {
@@ -190,7 +208,10 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
       
       const response = await fetch(
         `${apiUrl}/admin/examples/delete/${deletePath}`,
-        { method: 'DELETE' }
+        {
+          method: 'DELETE',
+          headers: getAuthHeaders()
+        }
       )
 
       if (response.ok) {
@@ -454,8 +475,11 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
                             <p className="text-xs text-muted-foreground">{(pair.before.size / 1024).toFixed(2)} KB</p>
                           </div>
                           <button
-                            onClick={() => handleDelete(pair.before!)}
-                            className="ml-2 px-2 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 rounded transition-colors flex items-center"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDelete(pair.before!)
+                            }}
+                            className="ml-2 px-2 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 rounded transition-colors flex items-center relative z-10"
                             title="Delete before image"
                           >
                             <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -521,8 +545,11 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
                             <p className="text-xs text-muted-foreground">{(pair.after.size / 1024).toFixed(2)} KB</p>
                           </div>
                           <button
-                            onClick={() => handleDelete(pair.after!)}
-                            className="ml-2 px-2 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 rounded transition-colors flex items-center"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDelete(pair.after!)
+                            }}
+                            className="ml-2 px-2 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 rounded transition-colors flex items-center relative z-10"
                             title="Delete after image"
                           >
                             <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
