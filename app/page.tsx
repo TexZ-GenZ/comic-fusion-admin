@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import ImageManager from '@/components/ImageManager'
+import AudioManager from '@/components/AudioManager'
 
 interface Category {
   id: string
@@ -53,7 +54,7 @@ export default function Home() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-foreground tracking-tight">ComicFusion Admin</h1>
-              <p className="mt-1 text-sm text-muted-foreground">Manage S3 Example Images</p>
+              <p className="mt-1 text-sm text-muted-foreground">Manage S3 Examples</p>
             </div>
             <div className="flex items-center space-x-2">
               <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20">
@@ -90,13 +91,15 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Image Manager */}
-        {selectedCategory && (
+        {/* Content Manager */}
+        {selectedCategory === 'audio-story' ? (
+          <AudioManager />
+        ) : selectedCategory ? (
           <ImageManager 
             category={selectedCategory}
             categoryName={categories.find(c => c.id === selectedCategory)?.name || ''}
           />
-        )}
+        ) : null}
       </main>
     </div>
   )
