@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import ImageManager from '@/components/ImageManager'
 import AudioManager from '@/components/AudioManager'
+import RecommendationManager from '@/components/RecommendationManager'
 import LoginPage from '@/components/LoginPage'
 
 interface Category {
@@ -110,9 +111,17 @@ export default function Home() {
       }
       
       const data = await response.json()
-      setCategories(data.categories || [])
-      if (data.categories && data.categories.length > 0) {
-        setSelectedCategory(data.categories[0].id)
+      const fetchedCats = data.categories || []
+      
+      // Add Recommendations category manually
+      const allCats = [
+        ...fetchedCats,
+        { id: 'recommendations', name: 'Recommendations', description: 'Manage curated recommendations' }
+      ]
+      
+      setCategories(allCats)
+      if (allCats.length > 0 && !selectedCategory) {
+        setSelectedCategory(allCats[0].id)
       }
     } catch (error) {
       console.error('Failed to fetch categories:', error)
@@ -194,6 +203,8 @@ export default function Home() {
             {/* Content Manager */}
             {selectedCategory === 'audio-story' ? (
               <AudioManager />
+            ) : selectedCategory === 'recommendations' ? (
+              <RecommendationManager credentials={credentials!} />
             ) : selectedCategory ? (
               <ImageManager 
                 category={selectedCategory}
