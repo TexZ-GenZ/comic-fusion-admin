@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import ImageManager from '@/components/ImageManager'
 import AudioManager from '@/components/AudioManager'
 import RecommendationManager from '@/components/RecommendationManager'
+import VoiceManager from '@/components/VoiceManager'
 import LoginPage from '@/components/LoginPage'
 
 interface Category {
@@ -116,6 +117,7 @@ export default function Home() {
       // Add Recommendations category manually
       const allCats = [
         ...fetchedCats,
+        { id: 'voice-library', name: 'Voice Library', description: 'Manage TTS voice options' },
         { id: 'recommendations', name: 'Recommendations', description: 'Manage curated recommendations' }
       ]
       
@@ -203,6 +205,8 @@ export default function Home() {
             {/* Content Manager */}
             {selectedCategory === 'audio-story' ? (
               <AudioManager />
+            ) : selectedCategory === 'voice-library' ? (
+              <VoiceManager />
             ) : selectedCategory === 'recommendations' ? (
               <RecommendationManager credentials={credentials!} />
             ) : selectedCategory ? (

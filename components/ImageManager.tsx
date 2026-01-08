@@ -29,7 +29,34 @@ interface ImageManagerProps {
 const SUBCATEGORIES: Record<string, string[]> = {
   'comic-translation': ['japanese', 'korean', 'chinese'],
   'art-restoration': ['black-bars', 'white-bars', 'mosaic'],
-  'mobile-layout': ['japanese', 'korean', 'chinese'],
+  'mobile-layout': ['japanese', 'english', 'chinese'],  // 'english' maps to 'korean' S3 folder
+}
+
+// Display name mapping - for categories where internal name differs from display name
+const SUBCATEGORY_DISPLAY_NAMES: Record<string, Record<string, string>> = {
+  'mobile-layout': {
+    'english': 'English',  // Displays as 'English' but uses 'korean' S3 folder
+  },
+}
+
+// S3 folder mapping - maps internal subcategory names to actual S3 folder names
+const SUBCATEGORY_S3_FOLDER: Record<string, Record<string, string>> = {
+  'mobile-layout': {
+    'english': 'korean',  // 'english' subcategory uses 'korean' folder in S3
+  },
+}
+
+// Helper to get S3 folder name for a subcategory
+function getS3FolderName(category: string, subcategory: string): string {
+  return SUBCATEGORY_S3_FOLDER[category]?.[subcategory] || subcategory
+}
+
+// Helper to get display name for a subcategory
+function getSubcategoryDisplayName(category: string, subcategory: string): string {
+  const displayName = SUBCATEGORY_DISPLAY_NAMES[category]?.[subcategory]
+  if (displayName) return displayName
+  // Default: capitalize each word
+  return subcategory.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
 }
 
 // Helper to get auth headers
@@ -143,8 +170,10 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
       let categoryImages = data.images.filter((img: S3Image) => img.category === category)
       
       // Further filter by subcategory if one is selected
+      // Use S3 folder mapping since images come from S3 with actual folder names
       if (selectedSubcategory) {
-        categoryImages = categoryImages.filter((img: S3Image) => img.subcategory === selectedSubcategory)
+        const s3FolderName = getS3FolderName(category, selectedSubcategory)
+        categoryImages = categoryImages.filter((img: S3Image) => img.subcategory === s3FolderName)
       }
       
       setImages(categoryImages)
@@ -165,9 +194,10 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
       formData.append('category', category)
       formData.append('image_type', imageType)
       
-      // Add subcategory if one is selected
+      // Add subcategory if one is selected (use S3 folder name for storage)
       if (selectedSubcategory) {
-        formData.append('subcategory', selectedSubcategory)
+        const s3FolderName = getS3FolderName(category, selectedSubcategory)
+        formData.append('subcategory', s3FolderName)
       }
 
       const response = await fetch(`${apiUrl}/admin/examples/upload`, {
@@ -306,7 +336,7 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
                     : 'bg-background border border-border text-foreground hover:border-primary/50'
                 }`}
               >
-                {subcat.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                {getSubcategoryDisplayName(category, subcat)}
               </button>
             ))}
           </div>
