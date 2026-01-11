@@ -10,7 +10,8 @@ interface S3Image {
   lastModified: string
   key: string
   category: string
-  subcategory?: string  // japanese/korean/chinese or black-bars/white-bars/mosaic
+  subcategory?: string  // japanese/korean/chinese or black-bars/white-bars/mosaic (source language)
+  target_language?: string  // english/spanish/french etc (target language for translations)
   type: 'before' | 'after'
 }
 
@@ -25,11 +26,17 @@ interface ImageManagerProps {
   categoryName: string
 }
 
-// Define subcategories for each category
+// Define subcategories for each category (source languages)
 const SUBCATEGORIES: Record<string, string[]> = {
   'comic-translation': ['japanese', 'korean', 'chinese'],
   'art-restoration': ['black-bars', 'white-bars', 'mosaic'],
   'mobile-layout': ['japanese', 'english', 'chinese'],  // 'english' maps to 'korean' S3 folder
+  'video-subtitles': ['english', 'hindi', 'spanish', 'french', 'german', 'portuguese', 'russian'],
+}
+
+// Define target languages for categories that need them
+const TARGET_LANGUAGES: Record<string, string[]> = {
+  'comic-translation': ['english', 'spanish', 'french', 'german', 'portuguese', 'italian', 'thai'],
 }
 
 // Display name mapping - for categories where internal name differs from display name
@@ -37,6 +44,17 @@ const SUBCATEGORY_DISPLAY_NAMES: Record<string, Record<string, string>> = {
   'mobile-layout': {
     'english': 'English',  // Displays as 'English' but uses 'korean' S3 folder
   },
+}
+
+// Target language display names
+const TARGET_LANGUAGE_DISPLAY_NAMES: Record<string, string> = {
+  'english': 'English',
+  'spanish': 'Spanish',
+  'french': 'French',
+  'german': 'German',
+  'portuguese': 'Portuguese',
+  'italian': 'Italian',
+  'thai': 'Thai',
 }
 
 // S3 folder mapping - maps internal subcategory names to actual S3 folder names
@@ -82,6 +100,7 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
   const [uploading, setUploading] = useState(false)
   const [dragActive, setDragActive] = useState<'before' | 'after' | null>(null)
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null)
+  const [selectedTargetLang, setSelectedTargetLang] = useState<string | null>(null)
   const [cacheKey, setCacheKey] = useState<number>(Date.now()) // For cache-busting
   const [viewerImage, setViewerImage] = useState<string | null>(null) // For image viewer
   const beforeInputRef = useRef<HTMLInputElement>(null)
@@ -89,19 +108,26 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
 
   // Get subcategories for current category
   const subcategories = SUBCATEGORIES[category] || null
+  // Get target languages for current category
+  const targetLanguages = TARGET_LANGUAGES[category] || null
 
-  // Set initial subcategory when category changes
+  // Set initial subcategory and target language when category changes
   useEffect(() => {
     if (subcategories && subcategories.length > 0) {
       setSelectedSubcategory(subcategories[0])
     } else {
       setSelectedSubcategory(null)
     }
+    if (targetLanguages && targetLanguages.length > 0) {
+      setSelectedTargetLang(targetLanguages[0])
+    } else {
+      setSelectedTargetLang(null)
+    }
   }, [category])
 
   useEffect(() => {
     fetchImages()
-  }, [category, selectedSubcategory])
+  }, [category, selectedSubcategory, selectedTargetLang])
 
   // Handle Escape key to close viewer
   useEffect(() => {
@@ -176,6 +202,11 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
         categoryImages = categoryImages.filter((img: S3Image) => img.subcategory === s3FolderName)
       }
       
+      // Further filter by target language if one is selected
+      if (selectedTargetLang) {
+        categoryImages = categoryImages.filter((img: S3Image) => img.target_language === selectedTargetLang)
+      }
+      
       setImages(categoryImages)
       setCacheKey(Date.now()) // Update cache key to bust browser cache
     } catch (error) {
@@ -198,6 +229,11 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
       if (selectedSubcategory) {
         const s3FolderName = getS3FolderName(category, selectedSubcategory)
         formData.append('subcategory', s3FolderName)
+      }
+      
+      // Add target language if one is selected
+      if (selectedTargetLang) {
+        formData.append('target_language', selectedTargetLang)
       }
 
       const response = await fetch(`${apiUrl}/admin/examples/upload`, {
@@ -227,10 +263,12 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
       
-      // Build the delete path based on whether subcategory exists
-      // Path format: category/subcategory/type/filename or category/type/filename
+      // Build the delete path based on whether subcategory and target_language exist
+      // Path format: category/subcategory/target_language/type/filename or category/subcategory/type/filename or category/type/filename
       let deletePath: string
-      if (img.subcategory) {
+      if (img.subcategory && img.target_language) {
+        deletePath = `${img.category}/${img.subcategory}/${img.target_language}/${img.type}/${img.filename}`
+      } else if (img.subcategory) {
         deletePath = `${img.category}/${img.subcategory}/${img.type}/${img.filename}`
       } else {
         deletePath = `${img.category}/${img.type}/${img.filename}`
@@ -324,7 +362,7 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
       {/* Subcategory Tabs (if applicable) */}
       {subcategories && subcategories.length > 0 && (
         <div className="bg-card rounded-lg shadow-sm border border-border p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-3">Subcategory</h3>
+          <h3 className="text-sm font-semibold text-foreground mb-3">Source Language</h3>
           <div className="flex flex-wrap gap-2">
             {subcategories.map((subcat) => (
               <button
@@ -337,6 +375,28 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
                 }`}
               >
                 {getSubcategoryDisplayName(category, subcat)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Target Language Tabs (if applicable) */}
+      {targetLanguages && targetLanguages.length > 0 && (
+        <div className="bg-card rounded-lg shadow-sm border border-border p-4">
+          <h3 className="text-sm font-semibold text-foreground mb-3">Target Language (Translation Output)</h3>
+          <div className="flex flex-wrap gap-2">
+            {targetLanguages.map((lang) => (
+              <button
+                key={lang}
+                onClick={() => setSelectedTargetLang(lang)}
+                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  selectedTargetLang === lang
+                    ? 'bg-green-600 text-white'
+                    : 'bg-background border border-border text-foreground hover:border-green-500/50'
+                }`}
+              >
+                {TARGET_LANGUAGE_DISPLAY_NAMES[lang] || lang.charAt(0).toUpperCase() + lang.slice(1)}
               </button>
             ))}
           </div>
