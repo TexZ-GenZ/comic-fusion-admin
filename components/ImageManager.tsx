@@ -29,8 +29,8 @@ interface ImageManagerProps {
 // Define subcategories for each category (source languages)
 const SUBCATEGORIES: Record<string, string[]> = {
   'comic-translation': ['japanese', 'korean', 'chinese'],
-  'art-restoration': ['black-bars', 'white-bars', 'mosaic'],
-  'mobile-layout': ['japanese', 'english', 'chinese'],  // 'english' maps to 'korean' S3 folder
+  'art-restoration': ['black-bars', 'white-bars'],
+  'mobile-layout': ['rtl', 'ltr'],  // Reading order: Right-to-Left or Left-to-Right
   'video-subtitles': ['english', 'hindi', 'spanish', 'french', 'german', 'portuguese', 'russian'],
 }
 
@@ -42,7 +42,8 @@ const TARGET_LANGUAGES: Record<string, string[]> = {
 // Display name mapping - for categories where internal name differs from display name
 const SUBCATEGORY_DISPLAY_NAMES: Record<string, Record<string, string>> = {
   'mobile-layout': {
-    'english': 'English',  // Displays as 'English' but uses 'korean' S3 folder
+    'rtl': 'Right to Left',
+    'ltr': 'Left to Right',
   },
 }
 
@@ -59,9 +60,7 @@ const TARGET_LANGUAGE_DISPLAY_NAMES: Record<string, string> = {
 
 // S3 folder mapping - maps internal subcategory names to actual S3 folder names
 const SUBCATEGORY_S3_FOLDER: Record<string, Record<string, string>> = {
-  'mobile-layout': {
-    'english': 'korean',  // 'english' subcategory uses 'korean' folder in S3
-  },
+  // No special mappings needed - subcategory names match S3 folder names
 }
 
 // Helper to get S3 folder name for a subcategory
