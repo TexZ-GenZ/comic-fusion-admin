@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
-import { Upload, Trash2, Play, Pause, Plus, Save, X, GripVertical, Check } from "lucide-react"
+import { Upload, Trash2, Play, Pause, Plus, X, GripVertical, Check } from "lucide-react"
 
 interface Voice {
   id: string
@@ -54,8 +54,6 @@ export default function VoiceManager() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
-  const [hasOrderChanges, setHasOrderChanges] = useState(false)
-  const [savingOrder, setSavingOrder] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
@@ -70,7 +68,6 @@ export default function VoiceManager() {
       // Sort by priority
       const sorted = [...data.voices].sort((a, b) => a.priority - b.priority)
       setVoices(sorted)
-      setHasOrderChanges(false)
     } catch (error) {
       console.error("Failed to fetch voices:", error)
     } finally {
@@ -157,40 +154,11 @@ export default function VoiceManager() {
     setVoices(newVoices)
     setDraggedIndex(null)
     setDragOverIndex(null)
-    setHasOrderChanges(true)
   }
 
   const handleDragEnd = () => {
     setDraggedIndex(null)
     setDragOverIndex(null)
-  }
-
-  const saveOrder = async () => {
-    setSavingOrder(true)
-    try {
-      const reorderData = voices.map((voice, index) => ({
-        id: voice.id,
-        priority: index,
-      }))
-      
-      const res = await fetch(`${apiUrl}/admin/examples/voices/${selectedLanguage}/reorder`, {
-        method: "PUT",
-        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ voices: reorderData }),
-      })
-      
-      if (res.ok) {
-        setHasOrderChanges(false)
-        fetchVoices()
-      } else {
-        const error = await res.json()
-        alert(`Save order failed: ${error.detail}`)
-      }
-    } catch (error) {
-      console.error("Save order failed:", error)
-    } finally {
-      setSavingOrder(false)
-    }
   }
 
   const handleVoiceCreated = () => {
@@ -215,16 +183,6 @@ export default function VoiceManager() {
           <span className="text-sm text-gray-500">{voices.length} voices</span>
         </div>
         <div className="flex items-center gap-2">
-          {hasOrderChanges && (
-            <button
-              onClick={saveOrder}
-              disabled={savingOrder}
-              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 flex items-center gap-2"
-            >
-              <Save size={16} />
-              {savingOrder ? "Saving..." : "Save Order"}
-            </button>
-          )}
           <button
             onClick={() => setShowCreateModal(true)}
             className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center gap-2"
