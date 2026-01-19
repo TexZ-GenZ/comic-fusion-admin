@@ -140,6 +140,23 @@ export default function VoiceManager() {
     setDragOverIndex(null)
   }
 
+  const persistVoiceOrder = async (orderedVoices: Voice[]) => {
+    try {
+      await Promise.all(
+        orderedVoices.map((voice, index) =>
+          fetch(`${apiUrl}/admin/examples/voices/${voice.language}/${voice.id}`, {
+            method: "PUT",
+            headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ priority: index }),
+          }),
+        ),
+      )
+      fetchVoices()
+    } catch (error) {
+      console.error("Failed to persist voice order:", error)
+    }
+  }
+
   const handleDrop = (index: number) => {
     if (draggedIndex === null || draggedIndex === index) {
       setDraggedIndex(null)
@@ -150,8 +167,14 @@ export default function VoiceManager() {
     const newVoices = [...voices]
     const [draggedVoice] = newVoices.splice(draggedIndex, 1)
     newVoices.splice(index, 0, draggedVoice)
-    
-    setVoices(newVoices)
+
+    const reordered = newVoices.map((voice, idx) => ({
+      ...voice,
+      priority: idx,
+    }))
+
+    setVoices(reordered)
+    void persistVoiceOrder(reordered)
     setDraggedIndex(null)
     setDragOverIndex(null)
   }
