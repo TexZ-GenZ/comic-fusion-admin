@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
-import { Upload, Trash2, Play, Pause, Plus, X, GripVertical, Check } from "lucide-react"
+import { Upload, Trash2, Play, Pause, Plus, X, GripVertical, Check, Pencil } from "lucide-react"
 
 interface Voice {
   id: string
@@ -52,6 +52,7 @@ export default function VoiceManager() {
   const [selectedLanguage, setSelectedLanguage] = useState<string>("en")
   const [playingVoice, setPlayingVoice] = useState<string | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [editingVoice, setEditingVoice] = useState<Voice | null>(null)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -189,6 +190,11 @@ export default function VoiceManager() {
     fetchVoices()
   }
 
+  const handleVoiceUpdated = () => {
+    setEditingVoice(null)
+    fetchVoices()
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -273,6 +279,9 @@ export default function VoiceManager() {
                 <div className="flex items-center gap-2">
                   <span className="text-xl">{voice.emoji || "🎙️"}</span>
                   <span className="font-medium">{voice.name}</span>
+                  <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600">
+                    {voice.id}
+                  </span>
                   <span className={`text-xs px-2 py-0.5 rounded ${
                     voice.type === "male" ? "bg-blue-100 text-blue-700" :
                     "bg-pink-100 text-pink-700"
@@ -291,6 +300,13 @@ export default function VoiceManager() {
 
               {/* Actions */}
               <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setEditingVoice(voice)}
+                  className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                  title="Edit"
+                >
+                  <Pencil size={18} />
+                </button>
                 <button
                   onClick={() => handleToggleActive(voice)}
                   className={`p-2 rounded transition-colors ${
@@ -325,6 +341,15 @@ export default function VoiceManager() {
           nextPriority={voices.length}
         />
       )}
+
+      {editingVoice && (
+        <EditVoiceModal
+          voice={editingVoice}
+          onClose={() => setEditingVoice(null)}
+          onUpdated={handleVoiceUpdated}
+          apiUrl={apiUrl}
+        />
+      )}
     </div>
   )
 }
@@ -345,18 +370,23 @@ function CreateVoiceModal({
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [type, setType] = useState<"male" | "female">("male")
+  const [id, setId] = useState("")
   const [audioFile, setAudioFile] = useState<File | null>(null)
   const [isActive, setIsActive] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Auto-generate ID from name
-  const generatedId = name
+  // Auto-generate ID from name (live suggestion)
+  const suggestedId = name
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, "")
     .replace(/\s+/g, "_")
     .slice(0, 50)
+
+  useEffect(() => {
+    setId((current) => (current ? current : suggestedId))
+  }, [suggestedId])
 
   // Auto-select emoji based on type
   const emoji = VOICE_TYPES.find(t => t.value === type)?.emoji || "🎙️"
@@ -373,7 +403,7 @@ function CreateVoiceModal({
       setError("Description is required")
       return
     }
-    if (!generatedId) {
+    if (!id.trim()) {
       setError("Invalid name - cannot generate ID")
       return
     }
@@ -385,7 +415,7 @@ function CreateVoiceModal({
         method: "POST",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: generatedId,
+          id: id.trim(),
           name: name.trim(),
           description: description.trim(),
           type,
@@ -407,7 +437,7 @@ function CreateVoiceModal({
         formData.append("file", audioFile)
 
         const uploadRes = await fetch(
-          `${apiUrl}/admin/examples/voices/${language}/${generatedId}/upload`,
+          `${apiUrl}/admin/examples/voices/${language}/${id.trim()}/upload`,
           {
             method: "POST",
             headers: getAuthHeaders(),
@@ -462,9 +492,22 @@ function CreateVoiceModal({
                 placeholder="e.g., Sarah"
                 required
               />
-              {generatedId && (
-                <p className="text-xs text-gray-500 mt-1">ID: {generatedId}</p>
-              )}
+            </div>
+
+            {/* ID */}
+            <div>
+              <label className="block text-sm font-medium mb-1">ID *</label>
+              <input
+                type="text"
+                value={id}
+                onChange={(e) => setId(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg"
+                placeholder={suggestedId || "e.g., sarah"}
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Suggested: {suggestedId || "(enter a name to generate)"}
+              </p>
             </div>
 
             {/* Description */}
@@ -609,6 +652,284 @@ function CreateVoiceModal({
                   <>
                     <Plus size={16} />
                     Create Voice
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function EditVoiceModal({
+  voice,
+  onClose,
+  onUpdated,
+  apiUrl,
+}: {
+  voice: Voice
+  onClose: () => void
+  onUpdated: () => void
+  apiUrl: string
+}) {
+  const [id, setId] = useState(voice.id)
+  const [name, setName] = useState(voice.name)
+  const [description, setDescription] = useState(voice.description)
+  const [type, setType] = useState<"male" | "female">(voice.type)
+  const [audioFile, setAudioFile] = useState<File | null>(null)
+  const [isActive, setIsActive] = useState(voice.is_active)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const emoji = VOICE_TYPES.find(t => t.value === type)?.emoji || voice.emoji || "🎙️"
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(null)
+
+    if (!id.trim()) {
+      setError("ID is required")
+      return
+    }
+    if (!name.trim()) {
+      setError("Name is required")
+      return
+    }
+    if (!description.trim()) {
+      setError("Description is required")
+      return
+    }
+
+    setSaving(true)
+    try {
+      const updateRes = await fetch(`${apiUrl}/admin/examples/voices/${voice.language}/${voice.id}`, {
+        method: "PUT",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: id.trim(),
+          name: name.trim(),
+          description: description.trim(),
+          type,
+          emoji,
+          is_active: isActive,
+        }),
+      })
+
+      if (!updateRes.ok) {
+        const errData = await updateRes.json()
+        throw new Error(errData.detail || "Failed to update voice")
+      }
+
+      if (audioFile) {
+        const formData = new FormData()
+        formData.append("file", audioFile)
+
+        const uploadRes = await fetch(
+          `${apiUrl}/admin/examples/voices/${voice.language}/${id.trim()}/upload`,
+          {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: formData,
+          },
+        )
+
+        if (!uploadRes.ok) {
+          const errData = await uploadRes.json()
+          console.error("Audio upload failed:", errData)
+          alert("Voice updated but audio upload failed. You can retry the upload.")
+        }
+      }
+
+      onUpdated()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update voice")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-semibold">
+              Edit Voice - {LANGUAGES.find(l => l.code === voice.language)?.name}
+            </h3>
+            <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+              <X size={20} />
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {error && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+                {error}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium mb-1">ID *</label>
+              <input
+                type="text"
+                value={id}
+                onChange={(e) => setId(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Changing ID updates the record and upload path.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Name *</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg"
+                placeholder="e.g., Sarah"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Description *</label>
+              <input
+                type="text"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg"
+                placeholder="e.g., Warm and friendly narrator"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Type</label>
+              <div className="flex gap-2">
+                {VOICE_TYPES.map((t) => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => setType(t.value as typeof type)}
+                    className={`flex-1 py-2 px-3 rounded-lg border-2 transition-colors flex items-center justify-center gap-2 ${
+                      type === t.value
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-gray-200 hover:border-gray-300"
+                    }`}
+                  >
+                    <span>{t.emoji}</span>
+                    <span className="text-sm">{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Audio Preview (optional)</label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="audio/*"
+                onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
+                className="hidden"
+              />
+
+              {!audioFile ? (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full py-4 border-2 border-dashed rounded-lg text-gray-500 hover:border-blue-400 hover:text-blue-500 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Upload size={18} />
+                  Upload new audio file
+                </button>
+              ) : (
+                <div className="border rounded-lg p-3 bg-gray-50 dark:bg-gray-900 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+                        <Play size={16} className="text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{audioFile.name}</p>
+                        <p className="text-xs text-gray-500">{(audioFile.size / 1024).toFixed(1)} KB</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAudioFile(null)
+                        if (fileInputRef.current) {
+                          fileInputRef.current.value = ""
+                        }
+                      }}
+                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                      title="Remove file"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  <audio
+                    controls
+                    src={URL.createObjectURL(audioFile)}
+                    className="w-full h-10"
+                    style={{ borderRadius: "8px" }}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full py-2 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors flex items-center justify-center gap-1"
+                  >
+                    <Upload size={14} />
+                    Change file
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="edit_is_active"
+                checked={isActive}
+                onChange={(e) => setIsActive(e.target.checked)}
+                className="rounded"
+              />
+              <label htmlFor="edit_is_active" className="text-sm">
+                Active (visible to users)
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2"
+              >
+                {saving ? (
+                  <>
+                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Pencil size={16} />
+                    Save Changes
                   </>
                 )}
               </button>
