@@ -77,6 +77,8 @@ export default function AudioManager() {
   const [editingMetadata, setEditingMetadata] = useState<Record<number, Partial<AudioFile>>>({});
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
   useEffect(() => {
     fetchAudios();
   }, []);
@@ -88,7 +90,7 @@ export default function AudioManager() {
   const fetchAudios = async () => {
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:8000/admin/examples/audio/list", {
+      const res = await fetch(`${apiUrl}/admin/examples/audio/list`, {
         headers: getAuthHeaders()
       });
       const data: AudioListResponse = await res.json();
@@ -103,7 +105,7 @@ export default function AudioManager() {
 
   const fetchVoices = async (language: Language) => {
     try {
-      const res = await fetch(`http://localhost:8000/admin/examples/audio/voices/${language}`, {
+      const res = await fetch(`${apiUrl}/admin/examples/audio/voices/${language}`, {
         headers: getAuthHeaders()
       });
       const data = await res.json();
@@ -128,7 +130,7 @@ export default function AudioManager() {
     formData.append("language", activeLanguage);
 
     try {
-      const res = await fetch("http://localhost:8000/admin/examples/audio/upload", {
+      const res = await fetch(`${apiUrl}/admin/examples/audio/upload`, {
         method: "POST",
         body: formData,
         headers: getAuthHeaders()
@@ -154,7 +156,7 @@ export default function AudioManager() {
 
     try {
       const res = await fetch(
-        `http://localhost:8000/admin/examples/audio/delete/${audio.speaker_mode}/${audio.language}/${audio.filename}`,
+        `${apiUrl}/admin/examples/audio/delete/${audio.speaker_mode}/${audio.language}/${audio.filename}`,
         {
           method: "DELETE",
           headers: getAuthHeaders()
@@ -179,7 +181,7 @@ export default function AudioManager() {
 
     setSaving(exampleNumber);
     try {
-      const res = await fetch("http://localhost:8000/admin/examples/audio/metadata", {
+      const res = await fetch(`${apiUrl}/admin/examples/audio/metadata`, {
         method: "PUT",
         headers: {
           ...getAuthHeaders(),
