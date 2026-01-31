@@ -34,7 +34,7 @@ interface AudioListResponse {
 }
 
 type SpeakerMode = "single-speaker" | "multi-speaker";
-type Language = "english" | "hindi" | "spanish" | "french" | "portuguese" | "russian";
+type Language = "english" | "hindi" | "spanish" | "french" | "portuguese" | "russian" | "tamil";
 
 const LANGUAGES: { value: Language; label: string }[] = [
   { value: "english", label: "English" },
@@ -43,6 +43,7 @@ const LANGUAGES: { value: Language; label: string }[] = [
   { value: "french", label: "French" },
   { value: "portuguese", label: "Portuguese" },
   { value: "russian", label: "Russian" },
+  { value: "tamil", label: "Tamil" },
 ];
 
 const SPEAKER_MODES: { value: SpeakerMode; label: string }[] = [

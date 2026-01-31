@@ -28,6 +28,7 @@ const LANGUAGES = [
   { code: "fr", name: "French" },
   { code: "pt", name: "Portuguese" },
   { code: "ru", name: "Russian" },
+  { code: "ta", name: "Tamil" },
 ]
 
 const VOICE_TYPES = [
