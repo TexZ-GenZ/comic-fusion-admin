@@ -32,6 +32,7 @@ const SUBCATEGORIES: Record<string, string[]> = {
   'art-restoration': ['black-bars', 'white-bars'],
   'mobile-layout': ['rtl', 'ltr'],  // Reading order: Right-to-Left or Left-to-Right
   'video-subtitles': ['english', 'hindi', 'spanish', 'french', 'german', 'portuguese', 'russian'],
+  'manga-colorization': ['default'],  // Simple before/after examples
 }
 
 // Define target languages for categories that need them
