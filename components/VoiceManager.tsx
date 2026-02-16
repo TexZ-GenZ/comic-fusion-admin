@@ -24,11 +24,13 @@ interface VoiceListResponse {
 const LANGUAGES = [
   { code: "en", name: "English" },
   { code: "hi", name: "Hindi" },
+  { code: "bn", name: "Bengali" },
+  { code: "mr", name: "Marathi" },
+  { code: "ta", name: "Tamil" },
   { code: "es", name: "Spanish" },
   { code: "fr", name: "French" },
   { code: "pt", name: "Portuguese" },
   { code: "ru", name: "Russian" },
-  { code: "ta", name: "Tamil" },
 ]
 
 const VOICE_TYPES = [

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Upload, Trash2, Play, Pause, Volume2, Save, ChevronDown } from "lucide-react";
+import { Upload, Trash2, Play, Pause, Volume2, Save, ChevronDown, GripVertical } from "lucide-react";
 
 interface AudioFile {
   key: string;
@@ -72,10 +72,14 @@ export default function AudioManager() {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState<number | null>(null);
+  const [reorderSaving, setReorderSaving] = useState(false);
+  const [replacingAudio, setReplacingAudio] = useState<number | null>(null);
   const [activeSpeaker, setActiveSpeaker] = useState<SpeakerMode>("single-speaker");
   const [activeLanguage, setActiveLanguage] = useState<Language>("english");
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const [editingMetadata, setEditingMetadata] = useState<Record<number, Partial<AudioFile>>>({});
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -176,6 +180,37 @@ export default function AudioManager() {
     }
   };
 
+  const handleReplaceFile = async (audio: AudioFile, file: File) => {
+    setReplacingAudio(audio.example_number);
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("speaker_mode", audio.speaker_mode);
+    formData.append("language", audio.language);
+    formData.append("example_number", String(audio.example_number));
+
+    try {
+      const res = await fetch(`${apiUrl}/admin/examples/audio/replace`, {
+        method: "POST",
+        body: formData,
+        headers: getAuthHeaders(),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        alert(`Replace failed: ${error.detail || "Unknown error"}`);
+        return;
+      }
+
+      await fetchAudios();
+      alert(`Audio file for example ${audio.example_number} replaced successfully!`);
+    } catch (error) {
+      console.error("Replace failed:", error);
+      alert("Replace failed");
+    } finally {
+      setReplacingAudio(null);
+    }
+  };
+
   const handleSaveMetadata = async (audio: AudioFile, exampleNumber: number) => {
     const metadata = editingMetadata[exampleNumber];
     if (!metadata) return;
@@ -228,6 +263,77 @@ export default function AudioManager() {
         [field]: value,
       },
     }));
+  };
+
+  const persistAudioOrder = async (orderedAudios: AudioFile[]) => {
+    setReorderSaving(true);
+    try {
+      const res = await fetch(`${apiUrl}/admin/examples/audio/reorder`, {
+        method: "PUT",
+        headers: {
+          ...getAuthHeaders(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          speaker_mode: activeSpeaker,
+          language: activeLanguage,
+          ordered_filenames: orderedAudios.map((audio) => audio.filename),
+        }),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.detail || "Failed to reorder audio examples");
+      }
+
+      setEditingMetadata({});
+      await fetchAudios();
+    } catch (error) {
+      console.error("Failed to persist audio order:", error);
+      alert(error instanceof Error ? error.message : "Failed to reorder audio examples");
+      await fetchAudios();
+    } finally {
+      setReorderSaving(false);
+    }
+  };
+
+  const handleDragStart = (index: number) => {
+    setDraggedIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    setDragOverIndex(index);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = async (index: number) => {
+    if (draggedIndex === null || draggedIndex === index) {
+      setDraggedIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+
+    const reordered = [...categoryAudios];
+    const [draggedAudio] = reordered.splice(draggedIndex, 1);
+    reordered.splice(index, 0, draggedAudio);
+
+    const unaffected = audios.filter(
+      (a) => !(a.speaker_mode === activeSpeaker && a.language === activeLanguage),
+    );
+    setAudios([...unaffected, ...reordered]);
+
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+    await persistAudioOrder(reordered);
   };
 
   const togglePlay = async (url: string) => {
@@ -337,21 +443,39 @@ export default function AudioManager() {
         <>
           {/* Audio Grid */}
           <div className="grid grid-cols-1 gap-6">
-            {Array.from({ length: Math.max(maxNumber, 3) }, (_, i) => i + 1).map((number) => {
-              const audio = categoryAudios.find((a) => a.example_number === number);
-              const isPlaying = audio && playingAudio === audio.url;
+            {categoryAudios.length === 0 ? (
+              <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
+                <p className="text-muted-foreground text-sm">No audio examples for this speaker mode and language yet.</p>
+              </div>
+            ) : (
+              categoryAudios.map((audio, index) => {
+              const number = audio.example_number;
+              const isPlaying = playingAudio === audio.url;
               const localMetadata = editingMetadata[number] || {};
               const hasChanges = Object.keys(localMetadata).length > 0;
 
               return (
                 <div
-                  key={number}
-                  className="bg-card rounded-lg border border-border hover:border-primary/50 transition-all"
+                  key={`${audio.speaker_mode}-${audio.language}-${audio.filename}`}
+                  draggable
+                  onDragStart={() => handleDragStart(index)}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={() => {
+                    void handleDrop(index);
+                  }}
+                  onDragEnd={handleDragEnd}
+                  className={`bg-card rounded-lg border transition-all ${
+                    dragOverIndex === index ? "border-primary border-2" : "border-border hover:border-primary/50"
+                  } ${draggedIndex === index ? "opacity-60" : ""}`}
                 >
                   <div className="p-6">
                     {/* Header */}
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-3">
+                        <div className="text-muted-foreground cursor-grab active:cursor-grabbing" title="Drag to reorder">
+                          <GripVertical className="w-5 h-5" />
+                        </div>
                         <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-bold">
                           {number}
                         </div>
@@ -365,57 +489,61 @@ export default function AudioManager() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        {audio ? (
-                          <>
-                            <button
-                              onClick={() => togglePlay(audio.url)}
-                              className="p-2 rounded-lg bg-primary hover:bg-primary/90 transition-colors"
-                              title={isPlaying ? "Pause" : "Play"}
-                            >
-                              {isPlaying ? (
-                                <Pause className="w-5 h-5 text-primary-foreground" />
-                              ) : (
-                                <Play className="w-5 h-5 text-primary-foreground" />
-                              )}
-                            </button>
-                            {hasChanges && (
-                              <button
-                                onClick={() => handleSaveMetadata(audio, number)}
-                                disabled={saving === number}
-                                className="p-2 rounded-lg bg-green-600 hover:bg-green-700 transition-colors disabled:opacity-50"
-                                title="Save Changes"
-                              >
-                                <Save className="w-5 h-5 text-white" />
-                              </button>
+                        <>
+                          <button
+                            onClick={() => togglePlay(audio.url)}
+                            className="p-2 rounded-lg bg-primary hover:bg-primary/90 transition-colors"
+                            title={isPlaying ? "Pause" : "Play"}
+                          >
+                            {isPlaying ? (
+                              <Pause className="w-5 h-5 text-primary-foreground" />
+                            ) : (
+                              <Play className="w-5 h-5 text-primary-foreground" />
                             )}
+                          </button>
+                          {hasChanges && (
                             <button
-                              onClick={() => handleDelete(audio)}
-                              className="p-2 rounded-lg bg-destructive hover:bg-destructive/90 transition-colors"
-                              title="Delete"
+                              onClick={() => handleSaveMetadata(audio, number)}
+                              disabled={saving === number}
+                              className="p-2 rounded-lg bg-green-600 hover:bg-green-700 transition-colors disabled:opacity-50"
+                              title="Save Changes"
                             >
-                              <Trash2 className="w-5 h-5 text-white" />
+                              <Save className="w-5 h-5 text-white" />
                             </button>
-                          </>
-                        ) : (
-                          <label className="p-2 rounded-lg bg-primary hover:bg-primary/90 transition-colors cursor-pointer">
-                            <Upload className="w-5 h-5 text-primary-foreground" />
+                          )}
+                          <label
+                            className={`p-2 rounded-lg bg-muted hover:bg-muted/80 transition-colors cursor-pointer ${
+                              replacingAudio === number ? "opacity-60 pointer-events-none" : ""
+                            }`}
+                            title={replacingAudio === number ? "Replacing..." : "Replace audio file"}
+                          >
+                            <Upload className="w-5 h-5 text-foreground" />
                             <input
                               type="file"
                               accept="audio/*"
                               className="hidden"
                               onChange={(e) => {
                                 const file = e.target.files?.[0];
-                                if (file) handleFileSelect(file);
+                                if (file) {
+                                  void handleReplaceFile(audio, file);
+                                }
+                                e.currentTarget.value = "";
                               }}
-                              disabled={uploading}
+                              disabled={replacingAudio === number}
                             />
                           </label>
-                        )}
+                          <button
+                            onClick={() => handleDelete(audio)}
+                            className="p-2 rounded-lg bg-destructive hover:bg-destructive/90 transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-5 h-5 text-white" />
+                          </button>
+                        </>
                       </div>
                     </div>
 
-                    {audio ? (
-                      <div className="space-y-4">
+                    <div className="space-y-4">
                         {/* Audio Player */}
                         <div className="bg-muted/50 border border-border rounded-lg p-3 flex items-center gap-3">
                           <Volume2 className="w-5 h-5 text-primary flex-shrink-0" />
@@ -539,20 +667,18 @@ export default function AudioManager() {
                             </div>
                           </div>
                         )}
-                      </div>
-                    ) : (
-                      <div className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors">
-                        <p className="text-muted-foreground text-sm">Click upload to add audio {number}</p>
-                      </div>
-                    )}
+                    </div>
                   </div>
                 </div>
               );
-            })}
+            }))}
           </div>
 
           {/* Upload All Button */}
           <div className="bg-card rounded-lg border-2 border-dashed border-border p-6 text-center hover:border-primary/50 transition-colors">
+            {reorderSaving && (
+              <p className="text-sm text-primary mb-2">Saving new audio order...</p>
+            )}
             <label className="cursor-pointer inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-opacity">
               <Upload className="w-5 h-5" />
               <span>Upload New Audio</span>
