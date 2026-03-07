@@ -21,6 +21,16 @@ interface ImagePair {
   after?: S3Image
 }
 
+interface AnimatedWallpaperMeta {
+  noReferenceImageUsed: boolean
+  characterDescription: string
+  timeOfDay: string
+  background: string
+  action: string
+  artStyle: string
+  aspectRatio: string
+}
+
 interface ImageManagerProps {
   category: string
   categoryName: string
@@ -33,6 +43,7 @@ const SUBCATEGORIES: Record<string, string[]> = {
   'mobile-layout': ['rtl', 'ltr'],  // Reading order: Right-to-Left or Left-to-Right
   'video-subtitles': ['english', 'hindi', 'spanish', 'french', 'german', 'portuguese', 'russian'],
   'manga-colorization': ['default'],  // Simple before/after examples
+  'animated-wallpaper': ['default'],  // Simple before/after examples
 }
 
 // Define target languages for categories that need them
@@ -58,6 +69,34 @@ const TARGET_LANGUAGE_DISPLAY_NAMES: Record<string, string> = {
   'italian': 'Italian',
   'thai': 'Thai',
 }
+
+const ANIMATED_WALLPAPER_TIME_OF_DAY_OPTIONS = [
+  'Morning',
+  'Noon',
+  'Sunset',
+  'Golden Hour',
+  'Night',
+  'Midnight',
+]
+
+const ANIMATED_WALLPAPER_ART_STYLE_OPTIONS = [
+  'Anime',
+  'Synthwave',
+  'Neon Noir',
+  'Cyberpunk',
+  'Studio Ghibli',
+  'Dark Fantasy',
+  '90s Retro',
+  'Watercolor',
+  'Ink & Brush',
+  'Manga Panel',
+]
+
+const ANIMATED_WALLPAPER_ASPECT_RATIO_OPTIONS = [
+  '9:16 Mobile',
+  '16:9 Desktop',
+  '1:1 Square',
+]
 
 // S3 folder mapping - maps internal subcategory names to actual S3 folder names
 const SUBCATEGORY_S3_FOLDER: Record<string, Record<string, string>> = {
@@ -93,7 +132,14 @@ function getAuthHeaders(): Record<string, string> {
 }
 
 export default function ImageManager({ category, categoryName }: ImageManagerProps) {
-  const isVideo = category === 'video-subtitles'
+  const isVideoCategory = category === 'video-subtitles'
+  const isAnimatedWallpaper = category === 'animated-wallpaper'
+  const isBeforeVideo = isVideoCategory
+  const isAfterVideo = isVideoCategory || isAnimatedWallpaper
+  const beforeMediaLabel = isBeforeVideo ? 'Video' : 'Image'
+  const afterMediaLabel = isAfterVideo ? 'Video' : 'Image'
+  const pairLabel = isVideoCategory ? 'Video' : isAnimatedWallpaper ? 'Media' : 'Image'
+  const mediaPreviewFrameClass = isAnimatedWallpaper ? 'h-80' : 'aspect-video'
   const [images, setImages] = useState<S3Image[]>([])
   const [imagePairs, setImagePairs] = useState<ImagePair[]>([])
   const [loading, setLoading] = useState(true)
@@ -103,16 +149,24 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
   const [selectedTargetLang, setSelectedTargetLang] = useState<string | null>(null)
   const [cacheKey, setCacheKey] = useState<number>(Date.now()) // For cache-busting
   const [viewerImage, setViewerImage] = useState<string | null>(null) // For image viewer
+  const [animatedWallpaperMeta, setAnimatedWallpaperMeta] = useState<Record<string, AnimatedWallpaperMeta>>({})
+  const [savingMetaPairId, setSavingMetaPairId] = useState<string | null>(null)
   const beforeInputRef = useRef<HTMLInputElement>(null)
   const afterInputRef = useRef<HTMLInputElement>(null)
 
   // Get subcategories for current category
-  const subcategories = SUBCATEGORIES[category] || null
+  const subcategories = category === 'animated-wallpaper' ? null : (SUBCATEGORIES[category] || null)
   // Get target languages for current category
   const targetLanguages = TARGET_LANGUAGES[category] || null
 
   // Set initial subcategory and target language when category changes
   useEffect(() => {
+    if (isAnimatedWallpaper) {
+      setSelectedSubcategory('default')
+      setSelectedTargetLang(null)
+      return
+    }
+
     if (subcategories && subcategories.length > 0) {
       setSelectedSubcategory(subcategories[0])
     } else {
@@ -124,6 +178,49 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
       setSelectedTargetLang(null)
     }
   }, [category])
+
+  useEffect(() => {
+    const fetchAnimatedWallpaperMeta = async () => {
+      if (!isAnimatedWallpaper) {
+        setAnimatedWallpaperMeta({})
+        return
+      }
+
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+        const response = await fetch(`${apiUrl}/admin/examples/animated-wallpaper/metadata`, {
+          headers: getAuthHeaders(),
+        })
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data?.detail || 'Failed to fetch animated wallpaper metadata')
+        }
+
+        const entries = Array.isArray(data?.items) ? data.items : []
+        const mapped: Record<string, AnimatedWallpaperMeta> = {}
+        entries.forEach((entry: any) => {
+          const pairId = String(entry?.pair_id || '').trim()
+          if (!pairId) return
+          mapped[pairId] = {
+            noReferenceImageUsed: Boolean(entry?.no_reference_image_used),
+            characterDescription: String(entry?.character_description || ''),
+            timeOfDay: String(entry?.scene || ''),
+            background: String(entry?.background || ''),
+            action: String(entry?.action || ''),
+            artStyle: String(entry?.art_style || ''),
+            aspectRatio: String(entry?.aspect_ratio || ''),
+          }
+        })
+        setAnimatedWallpaperMeta(mapped)
+      } catch (error) {
+        console.error('Failed to fetch animated wallpaper metadata:', error)
+        setAnimatedWallpaperMeta({})
+      }
+    }
+
+    fetchAnimatedWallpaperMeta()
+  }, [category, isAnimatedWallpaper])
 
   useEffect(() => {
     fetchImages()
@@ -183,6 +280,28 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
     setImagePairs(pairs)
   }, [images])
 
+  useEffect(() => {
+    if (!isAnimatedWallpaper) return
+
+    setAnimatedWallpaperMeta((prev) => {
+      const next = { ...prev }
+      imagePairs.forEach((pair) => {
+        if (!next[pair.filename]) {
+          next[pair.filename] = {
+            noReferenceImageUsed: false,
+            characterDescription: '',
+            timeOfDay: '',
+            background: '',
+            action: '',
+            artStyle: '',
+            aspectRatio: '',
+          }
+        }
+      })
+      return next
+    })
+  }, [imagePairs, isAnimatedWallpaper])
+
   const fetchImages = async () => {
     setLoading(true)
     try {
@@ -191,9 +310,20 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
         headers: getAuthHeaders()
       })
       const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data?.detail || 'Failed to fetch example images')
+      }
+
+      // API is expected to return { images: [...] }, but guard against malformed/legacy payloads.
+      const responseImages: S3Image[] = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.images)
+          ? data.images
+          : []
       
       // Filter images for current category and subcategory
-      let categoryImages = data.images.filter((img: S3Image) => img.category === category)
+      let categoryImages = responseImages.filter((img: S3Image) => img.category === category)
       
       // Further filter by subcategory if one is selected
       // Use S3 folder mapping since images come from S3 with actual folder names
@@ -211,6 +341,7 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
       setCacheKey(Date.now()) // Update cache key to bust browser cache
     } catch (error) {
       console.error('Failed to fetch images:', error)
+      setImages([])
     } finally {
       setLoading(false)
     }
@@ -244,7 +375,8 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
 
       if (response.ok) {
         await fetchImages()
-        alert(`${isVideo ? 'Video' : 'Image'} uploaded successfully!`)
+        const uploadedType = imageType === 'before' ? beforeMediaLabel : afterMediaLabel
+        alert(`${uploadedType} uploaded successfully!`)
       } else {
         const error = await response.json()
         alert(`Upload failed: ${error.detail}`)
@@ -321,6 +453,81 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
     }
   }
 
+  const updateAnimatedWallpaperMeta = (pairId: string, field: keyof AnimatedWallpaperMeta, value: string) => {
+    setAnimatedWallpaperMeta((prev) => ({
+      ...prev,
+      [pairId]: {
+        noReferenceImageUsed: prev[pairId]?.noReferenceImageUsed || false,
+        characterDescription: prev[pairId]?.characterDescription || '',
+        timeOfDay: prev[pairId]?.timeOfDay || '',
+        background: prev[pairId]?.background || '',
+        action: prev[pairId]?.action || '',
+        artStyle: prev[pairId]?.artStyle || '',
+        aspectRatio: prev[pairId]?.aspectRatio || '',
+        [field]: value,
+      },
+    }))
+  }
+
+  const updateAnimatedWallpaperMetaBoolean = (pairId: string, field: keyof AnimatedWallpaperMeta, value: boolean) => {
+    setAnimatedWallpaperMeta((prev) => ({
+      ...prev,
+      [pairId]: {
+        noReferenceImageUsed: prev[pairId]?.noReferenceImageUsed || false,
+        characterDescription: prev[pairId]?.characterDescription || '',
+        timeOfDay: prev[pairId]?.timeOfDay || '',
+        background: prev[pairId]?.background || '',
+        action: prev[pairId]?.action || '',
+        artStyle: prev[pairId]?.artStyle || '',
+        aspectRatio: prev[pairId]?.aspectRatio || '',
+        [field]: value,
+      },
+    }))
+  }
+
+  const saveAnimatedWallpaperMeta = async (pairId: string) => {
+    const entry = animatedWallpaperMeta[pairId]
+    if (!entry) return
+
+    setSavingMetaPairId(pairId)
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const response = await fetch(`${apiUrl}/admin/examples/animated-wallpaper/metadata`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({
+          items: [
+            {
+              pair_id: pairId,
+              no_reference_image_used: Boolean(entry.noReferenceImageUsed),
+              character_description: entry.characterDescription,
+              scene: entry.timeOfDay,
+              background: entry.background,
+              action: entry.action,
+              art_style: entry.artStyle,
+              aspect_ratio: entry.aspectRatio,
+            },
+          ],
+        }),
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data?.detail || 'Failed to save animated wallpaper metadata')
+      }
+
+      alert('Example details saved successfully!')
+    } catch (error) {
+      console.error('Failed to save animated wallpaper metadata:', error)
+      alert('Failed to save example details')
+    } finally {
+      setSavingMetaPairId(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -360,7 +567,7 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
       )}
 
       {/* Subcategory Tabs (if applicable) */}
-      {subcategories && subcategories.length > 0 && (
+      {!isAnimatedWallpaper && subcategories && subcategories.length > 0 && (
         <div className="bg-card rounded-lg shadow-sm border border-border p-4">
           <h3 className="text-sm font-semibold text-foreground mb-3">Source Language</h3>
           <div className="flex flex-wrap gap-2">
@@ -405,11 +612,11 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
 
       {/* Upload Section */}
       <div className="bg-card rounded-lg shadow-sm border border-border p-6">
-        <h2 className="text-xl font-semibold text-foreground mb-4">Upload New {isVideo ? 'Video' : 'Image'} Pair</h2>
+        <h2 className="text-xl font-semibold text-foreground mb-4">Upload New Before/After Pair</h2>
         <div className="grid md:grid-cols-2 gap-4">
           {/* Before Upload */}
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">Before {isVideo ? 'Video' : 'Image'}</label>
+            <label className="block text-sm font-medium text-foreground mb-2">Before {beforeMediaLabel}</label>
             <div
               className={`border-2 border-dashed rounded-lg p-8 text-center transition-all cursor-pointer ${
                 dragActive === 'before' 
@@ -426,13 +633,13 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
                 <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               <p className="text-sm font-medium text-foreground">Click to upload or drag & drop</p>
-              <p className="text-xs text-muted-foreground mt-1">{isVideo ? 'MP4, WebM up to 50MB' : 'PNG, JPG up to 10MB'}</p>
+              <p className="text-xs text-muted-foreground mt-1">{isBeforeVideo ? 'MP4, WebM up to 50MB' : 'PNG, JPG up to 10MB'}</p>
             </div>
             <input
               ref={beforeInputRef}
               type="file"
               className="hidden"
-              accept={isVideo ? 'video/*' : 'image/*'}
+              accept={isBeforeVideo ? 'video/*' : 'image/*'}
               onChange={(e) => handleFileInput(e, 'before')}
               disabled={uploading}
             />
@@ -440,7 +647,7 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
 
           {/* After Upload */}
           <div>
-            <label className="block text-sm font-medium text-foreground mb-2">After {isVideo ? 'Video' : 'Image'}</label>
+            <label className="block text-sm font-medium text-foreground mb-2">After {afterMediaLabel}</label>
             <div
               className={`border-2 border-dashed rounded-lg p-8 text-center transition-all cursor-pointer ${
                 dragActive === 'after' 
@@ -457,13 +664,13 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
                 <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               <p className="text-sm font-medium text-foreground">Click to upload or drag & drop</p>
-              <p className="text-xs text-muted-foreground mt-1">{isVideo ? 'MP4, WebM up to 50MB' : 'PNG, JPG up to 10MB'}</p>
+              <p className="text-xs text-muted-foreground mt-1">{isAfterVideo ? 'MP4, WebM up to 50MB' : 'PNG, JPG up to 10MB'}</p>
             </div>
             <input
               ref={afterInputRef}
               type="file"
               className="hidden"
-              accept={isVideo ? 'video/*' : 'image/*'}
+              accept={isAfterVideo ? 'video/*' : 'image/*'}
               onChange={(e) => handleFileInput(e, 'after')}
               disabled={uploading}
             />
@@ -475,7 +682,7 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
               <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
             </svg>
             <span>
-              <strong>Automatic Numbering:</strong> Uploaded images are automatically numbered (1.jpg, 2.jpg, etc.). Before and after images with the same number are paired together (before/1.jpg ↔ after/1.jpg).
+              <strong>Automatic Numbering:</strong> Uploaded files are automatically numbered (1.jpg, 2.jpg, etc.). Before and after files with the same number are paired together (before/1.jpg ↔ after/1.jpg).
             </span>
           </p>
         </div>
@@ -485,7 +692,7 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
       <div className="bg-card rounded-lg shadow-sm border border-border p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-foreground">
-            {isVideo ? 'Video' : 'Image'} Pairs ({imagePairs.length})
+            {pairLabel} Pairs ({imagePairs.length})
           </h2>
           <span className="text-sm text-muted-foreground">
             Showing pairs for <span className="font-medium text-foreground">{categoryName}</span>
@@ -501,7 +708,7 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
                     <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold mr-2">
                       {pair.filename}
                     </span>
-                    Image Pair #{pair.filename}
+                    {pairLabel} Pair #{pair.filename}
                   </h3>
                   <span className="text-xs text-muted-foreground">
                     {pair.before && pair.after ? (
@@ -530,13 +737,13 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
                     {pair.before ? (
                       <div className="relative group">
                         <div 
-                          className="aspect-video rounded-lg overflow-hidden bg-muted border border-border cursor-pointer hover:border-primary transition-colors"
-                          onClick={() => !isVideo && setViewerImage(`${pair.before!.url}?v=${cacheKey}`)}
+                          className={`${mediaPreviewFrameClass} rounded-lg overflow-hidden bg-muted border border-border cursor-pointer hover:border-primary transition-colors`}
+                          onClick={() => !isBeforeVideo && setViewerImage(`${pair.before!.url}?v=${cacheKey}`)}
                         >
-                          {isVideo ? (
+                          {isBeforeVideo ? (
                             <video
                               src={`${pair.before.url}?v=${cacheKey}`}
-                              className="object-cover w-full h-full"
+                              className="object-contain w-full h-full bg-black"
                               controls
                               loop
                               muted
@@ -581,7 +788,7 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
                       </div>
                     ) : (
                       <div 
-                        className="aspect-video rounded-lg bg-muted/50 border-2 border-dashed border-border flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 hover:bg-accent/5 transition-all"
+                        className={`${mediaPreviewFrameClass} rounded-lg bg-muted/50 border-2 border-dashed border-border flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 hover:bg-accent/5 transition-all`}
                         onClick={() => beforeInputRef.current?.click()}
                       >
                         <svg className="h-8 w-8 text-muted-foreground mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -600,13 +807,13 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
                     {pair.after ? (
                       <div className="relative group">
                         <div 
-                          className="aspect-video rounded-lg overflow-hidden bg-muted border border-border cursor-pointer hover:border-primary transition-colors"
-                          onClick={() => !isVideo && setViewerImage(`${pair.after!.url}?v=${cacheKey}`)}
+                          className={`${mediaPreviewFrameClass} rounded-lg overflow-hidden bg-muted border border-border cursor-pointer hover:border-primary transition-colors`}
+                          onClick={() => !isAfterVideo && setViewerImage(`${pair.after!.url}?v=${cacheKey}`)}
                         >
-                          {isVideo ? (
+                          {isAfterVideo ? (
                             <video
                               src={`${pair.after.url}?v=${cacheKey}`}
-                              className="object-cover w-full h-full"
+                              className="object-contain w-full h-full bg-black"
                               controls
                               loop
                               muted
@@ -651,7 +858,7 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
                       </div>
                     ) : (
                       <div 
-                        className="aspect-video rounded-lg bg-muted/50 border-2 border-dashed border-border flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 hover:bg-accent/5 transition-all"
+                        className={`${mediaPreviewFrameClass} rounded-lg bg-muted/50 border-2 border-dashed border-border flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 hover:bg-accent/5 transition-all`}
                         onClick={() => afterInputRef.current?.click()}
                       >
                         <svg className="h-8 w-8 text-muted-foreground mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -662,6 +869,105 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
                     )}
                   </div>
                 </div>
+
+                {isAnimatedWallpaper && (
+                  <div className="mt-4 border-t border-border pt-4">
+                    <h4 className="text-sm font-semibold text-foreground mb-3">Example Details</h4>
+                    <div className="grid md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">Time of Day</label>
+                        <select
+                          value={animatedWallpaperMeta[pair.filename]?.timeOfDay || ''}
+                          onChange={(e) => updateAnimatedWallpaperMeta(pair.filename, 'timeOfDay', e.target.value)}
+                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        >
+                          <option value="">Select time of day</option>
+                          {ANIMATED_WALLPAPER_TIME_OF_DAY_OPTIONS.map((timeOfDay) => (
+                            <option key={timeOfDay} value={timeOfDay}>{timeOfDay}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">Art Style</label>
+                        <select
+                          value={animatedWallpaperMeta[pair.filename]?.artStyle || ''}
+                          onChange={(e) => updateAnimatedWallpaperMeta(pair.filename, 'artStyle', e.target.value)}
+                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        >
+                          <option value="">Select art style</option>
+                          {ANIMATED_WALLPAPER_ART_STYLE_OPTIONS.map((artStyle) => (
+                            <option key={artStyle} value={artStyle}>{artStyle}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">Aspect Ratio</label>
+                        <select
+                          value={animatedWallpaperMeta[pair.filename]?.aspectRatio || ''}
+                          onChange={(e) => updateAnimatedWallpaperMeta(pair.filename, 'aspectRatio', e.target.value)}
+                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        >
+                          <option value="">Select aspect ratio</option>
+                          {ANIMATED_WALLPAPER_ASPECT_RATIO_OPTIONS.map((aspectRatio) => (
+                            <option key={aspectRatio} value={aspectRatio}>{aspectRatio}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="inline-flex items-center gap-2 text-sm text-foreground">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(animatedWallpaperMeta[pair.filename]?.noReferenceImageUsed)}
+                            onChange={(e) =>
+                              updateAnimatedWallpaperMetaBoolean(pair.filename, 'noReferenceImageUsed', e.target.checked)
+                            }
+                            className="h-4 w-4 rounded border border-border text-primary focus:ring-primary/40"
+                          />
+                          No reference image used
+                        </label>
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">Describe your character</label>
+                        <textarea
+                          value={animatedWallpaperMeta[pair.filename]?.characterDescription || ''}
+                          onChange={(e) => updateAnimatedWallpaperMeta(pair.filename, 'characterDescription', e.target.value)}
+                          rows={2}
+                          placeholder="Describe character look, outfit, expression, pose, and key identity traits."
+                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">Background</label>
+                        <input
+                          type="text"
+                          value={animatedWallpaperMeta[pair.filename]?.background || ''}
+                          onChange={(e) => updateAnimatedWallpaperMeta(pair.filename, 'background', e.target.value)}
+                          placeholder="Rain-soaked rooftop with neon city lights"
+                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">Action</label>
+                        <textarea
+                          value={animatedWallpaperMeta[pair.filename]?.action || ''}
+                          onChange={(e) => updateAnimatedWallpaperMeta(pair.filename, 'action', e.target.value)}
+                          rows={3}
+                          placeholder="Character standing on a rain-soaked rooftop overlooking a glowing neon cityscape with holographic billboards."
+                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        onClick={() => saveAnimatedWallpaperMeta(pair.filename)}
+                        disabled={savingMetaPairId === pair.filename}
+                        className="px-3 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {savingMetaPairId === pair.filename ? 'Saving...' : 'Save Example Details'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -670,8 +976,8 @@ export default function ImageManager({ category, categoryName }: ImageManagerPro
             <svg className="mx-auto h-12 w-12 text-muted-foreground mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
-            <p className="text-muted-foreground mb-2">No {isVideo ? 'video' : 'image'} pairs yet</p>
-            <p className="text-sm text-muted-foreground">Upload your first before/after {isVideo ? 'videos' : 'images'} above to get started</p>
+            <p className="text-muted-foreground mb-2">No {pairLabel.toLowerCase()} pairs yet</p>
+            <p className="text-sm text-muted-foreground">Upload your first before/after pair above to get started</p>
           </div>
         )}
       </div>
