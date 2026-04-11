@@ -15,6 +15,9 @@ interface CuratedItem {
   description: string
   coverImage: string
   targetUrl: string
+  chapter?: string
+  randomizeChapter?: boolean
+  readingOrder?: string
   medium: string
   tools: string[]
   tags: string[]
@@ -72,6 +75,9 @@ export default function RecommendationManager({ credentials }: RecommendationMan
         setItems(
           data.map((item: CuratedItem) => ({
             ...item,
+            chapter: item.chapter || '',
+            randomizeChapter: item.randomizeChapter === true,
+            readingOrder: item.readingOrder === 'rtl' || item.readingOrder === 'ltr' ? item.readingOrder : '',
             tools: Array.isArray(item.tools) ? item.tools : [],
           })),
         )
@@ -128,6 +134,9 @@ export default function RecommendationManager({ credentials }: RecommendationMan
       isActive: true,
       priority: 0,
       medium: result.source === 'mangadex' ? 'manga' : 'novel',
+      chapter: '',
+      randomizeChapter: false,
+      readingOrder: '',
       tools: [],
       genres: []
     } as any) // Type casting for simplicity
@@ -192,6 +201,11 @@ export default function RecommendationManager({ credentials }: RecommendationMan
       const body = {
         ...editingItem,
         // Ensure arrays
+        chapter: String((editingItem as any).chapter || '').trim(),
+        randomizeChapter: (editingItem as any).randomizeChapter === true,
+        readingOrder: ['rtl', 'ltr'].includes(String((editingItem as any).readingOrder || '').toLowerCase())
+          ? String((editingItem as any).readingOrder).toLowerCase()
+          : null,
         tags: Array.isArray(editingItem.tags) ? editingItem.tags : [],
         genres: Array.isArray((editingItem as any).genres) ? (editingItem as any).genres : [],
         tools: Array.isArray((editingItem as any).tools) ? (editingItem as any).tools : []
@@ -349,6 +363,19 @@ export default function RecommendationManager({ credentials }: RecommendationMan
                       </select>
                     </div>
                     <div>
+                      <label className="block text-sm font-medium mb-1">Reading Direction</label>
+                      <select
+                        value={(editingItem as CuratedItem).readingOrder || ''}
+                        onChange={(e) => setEditingItem({...editingItem, readingOrder: e.target.value})}
+                        className="w-full border rounded px-3 py-2"
+                      >
+                        <option value="">Any direction</option>
+                        <option value="rtl">Right to Left</option>
+                        <option value="ltr">Left to Right</option>
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500">Used by Mobile Layout Popular Right Now filtering.</p>
+                    </div>
+                    <div>
                       <label className="block text-sm font-medium mb-1">Target URL (Deeplink)</label>
                       <div className="flex gap-2">
                         <input 
@@ -373,6 +400,30 @@ export default function RecommendationManager({ credentials }: RecommendationMan
                     onChange={(e) => setEditingItem({...editingItem, description: e.target.value})}
                     className="w-full border rounded px-3 py-2 h-32"
                   />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Chapter Label (optional)</label>
+                    <input
+                      type="text"
+                      value={(editingItem as CuratedItem).chapter || ''}
+                      onChange={(e) => setEditingItem({...editingItem, chapter: e.target.value})}
+                      placeholder="e.g. Ch. 1178 or Latest"
+                      className="w-full border rounded px-3 py-2"
+                    />
+                  </div>
+                  <div className="flex items-end pb-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={(editingItem as CuratedItem).randomizeChapter === true}
+                        onChange={(e) => setEditingItem({...editingItem, randomizeChapter: e.target.checked})}
+                        className="w-5 h-5"
+                      />
+                      <span className="font-medium text-sm">Randomize chapter if label is empty</span>
+                    </label>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -461,6 +512,7 @@ export default function RecommendationManager({ credentials }: RecommendationMan
               <th className="w-16 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cover</th>
               <th className="w-[34%] px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
               <th className="w-[12%] px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
+              <th className="w-[10%] px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Direction</th>
               <th className="w-[14%] px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tools</th>
               <th className="w-[8%] px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
               <th className="w-[10%] px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
@@ -479,6 +531,9 @@ export default function RecommendationManager({ credentials }: RecommendationMan
                 </td>
                 <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500 capitalize">
                   {item.source_type}
+                </td>
+                <td className="px-3 py-4 whitespace-nowrap text-xs text-gray-500 uppercase">
+                  {item.readingOrder || 'ANY'}
                 </td>
                 <td className="px-3 py-4 text-xs text-gray-500 truncate">
                   {item.tools?.length
@@ -523,7 +578,7 @@ export default function RecommendationManager({ credentials }: RecommendationMan
             ))}
             {items.length === 0 && !loading && (
               <tr>
-                <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
                   No curated recommendations yet. Use the search above to add some.
                 </td>
               </tr>
