@@ -114,11 +114,11 @@ export default function Home() {
       const data = await response.json()
       const fetchedCats = data.categories || []
       
-      // Add Recommendations category manually
+      // Add Popular Right Now category manually
       const allCats = [
         ...fetchedCats,
         { id: 'voice-library', name: 'Voice Library', description: 'Manage TTS voice options' },
-        { id: 'recommendations', name: 'Recommendations', description: 'Manage curated recommendations' }
+        { id: 'recommendations', name: 'Popular Right Now', description: 'Manage popular right now feed' }
       ]
       
       setCategories(allCats)

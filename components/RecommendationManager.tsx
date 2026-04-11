@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from 'react'
-import { Search, Plus, Trash2, Edit2, Save, X, ExternalLink } from 'lucide-react'
+import { Trash2, Edit2, Save, X, ExternalLink, Copy } from 'lucide-react'
 
 interface RecommendationManagerProps {
   credentials: { username: string; password: string }
@@ -16,6 +16,7 @@ interface CuratedItem {
   coverImage: string
   targetUrl: string
   medium: string
+  tools: string[]
   tags: string[]
   genres: string[]
   isActive: boolean
@@ -34,6 +35,16 @@ interface SearchResult {
   views?: number
   status?: string
 }
+
+const TOOL_OPTIONS = [
+  { key: 'comic-translation', label: 'Comic Translation' },
+  { key: 'art-restoration', label: 'Art Restoration' },
+  { key: 'manga-colorization', label: 'Manga Colorization' },
+  { key: 'mobile-layout', label: 'Mobile Layout' },
+  { key: 'novel-to-audio', label: 'Novel to Audio' },
+  { key: 'video-subtitles', label: 'Video Subtitles' },
+  { key: 'animated-wallpaper', label: 'Animated Wallpaper' },
+]
 
 export default function RecommendationManager({ credentials }: RecommendationManagerProps) {
   const [items, setItems] = useState<CuratedItem[]>([])
@@ -58,7 +69,12 @@ export default function RecommendationManager({ credentials }: RecommendationMan
       })
       if (res.ok) {
         const data = await res.json()
-        setItems(data)
+        setItems(
+          data.map((item: CuratedItem) => ({
+            ...item,
+            tools: Array.isArray(item.tools) ? item.tools : [],
+          })),
+        )
       }
     } catch (error) {
       console.error("Failed to fetch items", error)
@@ -112,14 +128,41 @@ export default function RecommendationManager({ credentials }: RecommendationMan
       isActive: true,
       priority: 0,
       medium: result.source === 'mangadex' ? 'manga' : 'novel',
+      tools: [],
       genres: []
     } as any) // Type casting for simplicity
     setIsNew(true)
   }
 
+  const toggleTool = (toolKey: string, enabled: boolean) => {
+    if (!editingItem) return
+    const currentTools = Array.isArray((editingItem as CuratedItem).tools)
+      ? [...(editingItem as CuratedItem).tools]
+      : []
+
+    const nextTools = enabled
+      ? Array.from(new Set([...currentTools, toolKey]))
+      : currentTools.filter((key) => key !== toolKey)
+
+    setEditingItem({ ...editingItem, tools: nextTools } as CuratedItem)
+  }
+
   const handleEditItem = (item: CuratedItem) => {
     setEditingItem(item)
     setIsNew(false)
+  }
+
+  const handleDuplicateItem = (item: CuratedItem) => {
+    const sourceIdBase = String(item.source_id || 'manual-item').trim()
+    const duplicatedSourceId = `${sourceIdBase}-copy-${Date.now()}`
+    const duplicatedItem = {
+      ...item,
+      source_id: duplicatedSourceId,
+      title: item.title.endsWith(' (Copy)') ? item.title : `${item.title} (Copy)`,
+    }
+
+    setEditingItem(duplicatedItem as CuratedItem)
+    setIsNew(true)
   }
 
   const handleDeleteItem = async (id: string) => {
@@ -150,7 +193,8 @@ export default function RecommendationManager({ credentials }: RecommendationMan
         ...editingItem,
         // Ensure arrays
         tags: Array.isArray(editingItem.tags) ? editingItem.tags : [],
-        genres: Array.isArray((editingItem as any).genres) ? (editingItem as any).genres : []
+        genres: Array.isArray((editingItem as any).genres) ? (editingItem as any).genres : [],
+        tools: Array.isArray((editingItem as any).tools) ? (editingItem as any).tools : []
       }
 
       const res = await fetch(endpoint, {
@@ -178,13 +222,15 @@ export default function RecommendationManager({ credentials }: RecommendationMan
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Curated Recommendations</h2>
-        <button 
-          onClick={() => { setSearchResults([]); setEditingItem(null); }}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-        >
-          Add New
-        </button>
+        <h2 className="text-2xl font-bold">Popular Right Now</h2>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => { setSearchResults([]); setEditingItem(null); }}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Add New
+          </button>
+        </div>
       </div>
 
       {/* Search Section */}
@@ -290,7 +336,7 @@ export default function RecommendationManager({ credentials }: RecommendationMan
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-1">Medium</label>
+                      <label className="block text-sm font-medium mb-1">Tab (Medium)</label>
                       <select 
                         value={(editingItem as CuratedItem).medium || 'manga'}
                         onChange={(e) => setEditingItem({...editingItem, medium: e.target.value})}
@@ -353,6 +399,30 @@ export default function RecommendationManager({ credentials }: RecommendationMan
                 </div>
 
                 <div>
+                  <label className="block text-sm font-medium mb-2">Tools Visibility</label>
+                  <p className="text-xs text-gray-500 mb-2">No tool selected means this item can appear for all tools.</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {TOOL_OPTIONS.map((tool) => {
+                      const selectedTools = Array.isArray((editingItem as CuratedItem).tools)
+                        ? (editingItem as CuratedItem).tools
+                        : []
+                      const checked = selectedTools.includes(tool.key)
+                      return (
+                        <label key={tool.key} className="flex items-center gap-2 p-2 border rounded cursor-pointer hover:bg-gray-50">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => toggleTool(tool.key, e.target.checked)}
+                            className="w-4 h-4"
+                          />
+                          <span className="text-sm">{tool.label}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div>
                   <label className="block text-sm font-medium mb-1">Tags (comma separated)</label>
                   <input 
                     type="text" 
@@ -385,43 +455,67 @@ export default function RecommendationManager({ credentials }: RecommendationMan
 
       {/* List Section */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
-        <table className="w-full">
+        <table className="w-full table-fixed">
           <thead className="bg-gray-50 border-b">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cover</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              <th className="w-16 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cover</th>
+              <th className="w-[34%] px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
+              <th className="w-[12%] px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
+              <th className="w-[14%] px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tools</th>
+              <th className="w-[8%] px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
+              <th className="w-[10%] px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+              <th className="w-24 sticky right-0 bg-gray-50 px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {items.map((item) => (
               <tr key={item.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap">
+                <td className="px-3 py-4 whitespace-nowrap">
                   <img src={item.coverImage} alt="" className="h-12 w-8 object-cover rounded" />
                 </td>
-                <td className="px-6 py-4">
-                  <div className="text-sm font-medium text-gray-900 line-clamp-1">{item.title}</div>
-                  <div className="text-xs text-gray-500 line-clamp-1">{item.targetUrl}</div>
+                <td className="px-3 py-4">
+                  <div className="text-sm font-medium text-gray-900 truncate">{item.title}</div>
+                  <div className="text-xs text-gray-500 truncate">{item.targetUrl}</div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 capitalize">
+                <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500 capitalize">
                   {item.source_type}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-3 py-4 text-xs text-gray-500 truncate">
+                  {item.tools?.length
+                    ? item.tools.join(', ')
+                    : 'All tools'}
+                </td>
+                <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
                   {item.priority}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap">
+                <td className="px-3 py-4 whitespace-nowrap">
                   <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${item.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                     {item.isActive ? 'Active' : 'Inactive'}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <button onClick={() => handleEditItem(item)} className="text-indigo-600 hover:text-indigo-900 mr-4">
+                <td className="sticky right-0 bg-white px-3 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  <button
+                    onClick={() => handleEditItem(item)}
+                    className="text-indigo-600 hover:text-indigo-900 mr-3"
+                    title="Edit"
+                    aria-label="Edit recommendation"
+                  >
                     <Edit2 className="w-4 h-4" />
                   </button>
-                  <button onClick={() => handleDeleteItem(item.id)} className="text-red-600 hover:text-red-900">
+                  <button
+                    onClick={() => handleDuplicateItem(item)}
+                    className="text-sky-600 hover:text-sky-900 mr-3"
+                    title="Duplicate"
+                    aria-label="Duplicate recommendation"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteItem(item.id)}
+                    className="text-red-600 hover:text-red-900"
+                    title="Delete"
+                    aria-label="Delete recommendation"
+                  >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </td>
@@ -429,7 +523,7 @@ export default function RecommendationManager({ credentials }: RecommendationMan
             ))}
             {items.length === 0 && !loading && (
               <tr>
-                <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
                   No curated recommendations yet. Use the search above to add some.
                 </td>
               </tr>
